@@ -36,3 +36,5 @@ logs
 build
 .DS_Store
 .env
+/.cache
+/.idea
