@@ -36,7 +36,7 @@ contracts:
       - event: Unsubscription(uint256 indexed tokenId, address indexed subscriber)
 networks:
   - id: 56
-    start_block: 50000000
+    start_block: 47000000
     contracts:
       - name: PositionManager
         address:
