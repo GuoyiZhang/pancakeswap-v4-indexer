@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  indexer:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # 基础配置
+      - NODE_ENV=production
+      
+      # RPC配置 - 请根据需要设置
+      - ENVIO_BSC_RPC_URL=${BSC_RPC_URL:-https://bsc-dataseed1.binance.org}
+      - ENVIO_ETHEREUM_RPC_URL=${ETHEREUM_RPC_URL:-https://mainnet.infura.io/v3/YOUR_INFURA_KEY}
+      
+      # 数据库配置
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-envio}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      
+      # Hasura配置
+      - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_ADMIN_SECRET:-myadminsecretkey}
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hasura:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - envio-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-envio}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - envio-network
+
+  hasura:
+    image: hasura/graphql-engine:v2.36.0
+    ports:
+      - "8081:8080"
+    environment:
+      - HASURA_GRAPHQL_METADATA_DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-envio}
+      - HASURA_GRAPHQL_DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-envio}
+      - HASURA_GRAPHQL_ENABLE_CONSOLE=true
+      - HASURA_GRAPHQL_DEV_MODE=false
+      - HASURA_GRAPHQL_ENABLED_LOG_TYPES=startup, http-log, webhook-log, websocket-log, query-log
+      - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_ADMIN_SECRET:-myadminsecretkey}
+      - HASURA_GRAPHQL_UNAUTHORIZED_ROLE=anonymous
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - envio-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - envio-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - indexer
+      - hasura
+    restart: unless-stopped
+    networks:
+      - envio-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  envio-network:
+    driver: bridge 

@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pancakeswap-indexer
+  labels:
+    app: pancakeswap-indexer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pancakeswap-indexer
+  template:
+    metadata:
+      labels:
+        app: pancakeswap-indexer
+    spec:
+      containers:
+      - name: indexer
+        image: ghcr.io/your-username/pancakeswap-v4-indexer:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: postgres-host
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: postgres-password
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: postgres-db
+        - name: HASURA_ADMIN_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: hasura-admin-secret
+        - name: ENVIO_BSC_RPC_URL
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: bsc-rpc-url
+        - name: ENVIO_ETHEREUM_RPC_URL
+          valueFrom:
+            secretKeyRef:
+              name: indexer-secrets
+              key: ethereum-rpc-url
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pancakeswap-indexer-service
+spec:
+  selector:
+    app: pancakeswap-indexer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pancakeswap-indexer-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  tls:
+  - hosts:
+    - indexer.yourdomain.com
+    secretName: indexer-tls
+  rules:
+  - host: indexer.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: pancakeswap-indexer-service
+            port:
+              number: 80 
